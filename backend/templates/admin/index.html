@@ -1,0 +1,145 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block content %}
+  <div class="dashboard" style="margin-bottom: 2rem;">
+    <h1 style="margin-bottom:1rem;">Panel de control</h1>
+    <p>Resumen de los últimos 30 días.</p>
+
+    <div style="margin: 12px 0; display: inline-flex; border: 1px solid #d1d5db; border-radius: 6px; overflow: hidden;">
+      <button id="btn-range-day" style="padding: 6px 10px; border: none; background: #fff; cursor: pointer;">Día</button>
+      <button id="btn-range-week" style="padding: 6px 10px; border-left: 1px solid #d1d5db; border-right: 1px solid #d1d5db; background: #fff; cursor: pointer;">Semana</button>
+      <button id="btn-range-month" style="padding: 6px 10px; border: none; background: #2563eb; color: #fff; cursor: pointer;">Mes</button>
+    </div>
+
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; align-items: stretch;">
+      <div style="background:#fff; border:1px solid #eee; border-radius:8px; padding:12px;">
+        <h3 style="margin:0 0 8px 0;">Pedidos por día</h3>
+        <canvas id="ordersByDay"></canvas>
+      </div>
+      <div style="background:#fff; border:1px solid #eee; border-radius:8px; padding:12px;">
+        <h3 style="margin:0 0 8px 0;">Ingresos por día</h3>
+        <canvas id="revenueByDay"></canvas>
+      </div>
+      <div style="background:#fff; border:1px solid #eee; border-radius:8px; padding:12px;">
+        <h3 id="topProductsDonutTitle" style="margin:0 0 8px 0;">Productos más pedidos</h3>
+        <canvas id="topProductsDonut"></canvas>
+      </div>
+      <div style="background:#fff; border:1px solid #eee; border-radius:8px; padding:12px;">
+        <h3 id="usersByDayTitle" style="margin:0 0 8px 0;">Clientes registrados</h3>
+        <canvas id="usersByDay"></canvas>
+      </div>
+    </div>
+  </div>
+
+  {# Lista de aplicaciones del admin debajo del dashboard #}
+  {% include "admin/app_list.html" with app_list=app_list %}
+{% endblock %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const baseEndpoint = new URL('{% url "admin-dashboard-data" %}', window.location.origin).toString();
+
+      let charts = {};
+
+      function destroyCharts() {
+        Object.values(charts).forEach(ch => { try { ch.destroy(); } catch(e){} });
+        charts = {};
+      }
+
+      function highlightButton(range) {
+        const dayBtn = document.getElementById('btn-range-day');
+        const weekBtn = document.getElementById('btn-range-week');
+        const monthBtn = document.getElementById('btn-range-month');
+        const buttons = [dayBtn, weekBtn, monthBtn];
+        buttons.forEach(b => { b.style.background = '#fff'; b.style.color = '#000'; });
+        if (range === 'day') { dayBtn.style.background = '#2563eb'; dayBtn.style.color = '#fff'; }
+        else if (range === 'week') { weekBtn.style.background = '#2563eb'; weekBtn.style.color = '#fff'; }
+        else { monthBtn.style.background = '#2563eb'; monthBtn.style.color = '#fff'; }
+      }
+
+      function loadData(range) {
+        highlightButton(range);
+        const url = range ? `${baseEndpoint}?range=${encodeURIComponent(range)}` : baseEndpoint;
+        fetch(url, { credentials: 'same-origin' })
+          .then(r => r.json())
+          .then(data => {
+            destroyCharts();
+            // Helpers con zona horaria de Chile
+            const fmtDate = (iso) => {
+              // Si viene en formato 'YYYY-MM-DD', evitar crear Date para no descontar un día por zona horaria
+              if (typeof iso === 'string' && iso.length === 10 && iso.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                const [y, m, d] = iso.split('-').map(Number);
+                const months = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+                return `${d} ${months[(m - 1) % 12]}`;
+              }
+              return new Date(iso).toLocaleDateString('es-CL', { month:'short', day:'numeric', timeZone: 'America/Santiago' });
+            };
+            const fmtHour = (iso) => new Date(iso).toLocaleTimeString('es-CL', { hour: '2-digit', timeZone: 'America/Santiago' });
+
+            // Actualizar título de Productos más pedidos según rango
+            const donutTitle = document.getElementById('topProductsDonutTitle');
+            if (donutTitle) {
+              donutTitle.textContent = range === 'day' ? 'Productos más pedidos (últimas 24h)' : 'Productos más pedidos';
+            }
+
+            // Actualizar título de Clientes registrados según rango
+            const usersTitle = document.getElementById('usersByDayTitle');
+            if (usersTitle) {
+              usersTitle.textContent = range === 'day' ? 'Clientes registrados (últimas 24h)' : 'Clientes registrados';
+            }
+
+            // Orders by day
+            const obdl = data.ordersByDay.map(d => (range === 'day' ? fmtHour(d.date) : fmtDate(d.date)));
+            const obdv = data.ordersByDay.map(d => d.count);
+          charts.orders = new Chart(document.getElementById('ordersByDay'), {
+            type: 'bar',
+            data: { labels: obdl, datasets: [{ label: 'Pedidos', data: obdv, backgroundColor: '#2563eb' }] },
+            options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+          });
+
+            // Revenue by day
+            const rbdl = data.revenueByDay.map(d => (range === 'day' ? fmtHour(d.date) : fmtDate(d.date)));
+            const rbdv = data.revenueByDay.map(d => d.total);
+          charts.revenue = new Chart(document.getElementById('revenueByDay'), {
+            type: 'bar',
+            data: { labels: rbdl, datasets: [{ label: 'Ingresos', data: rbdv, backgroundColor: '#16a34a' }] },
+            options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+          });
+
+            // Top products (doughnut)
+            const tpDonutLabels = data.topProducts.map(d => d.product);
+            const tpDonutValues = data.topProducts.map(d => d.quantity);
+          charts.topDonut = new Chart(document.getElementById('topProductsDonut'), {
+            type: 'doughnut',
+            data: { labels: tpDonutLabels, datasets: [{ data: tpDonutValues, backgroundColor: ['#0ea5e9','#3b82f6','#06b6d4','#10b981','#22c55e','#84cc16'] }] },
+            options: { plugins: { legend: { position: 'bottom' } } }
+          });
+
+            // Users by day/hour (clientes registrados)
+            const ubdLabels = data.usersByDay.map(d => (range === 'day' ? fmtHour(d.date) : fmtDate(d.date)));
+            const ubdValues = data.usersByDay.map(d => d.count);
+          charts.users = new Chart(document.getElementById('usersByDay'), {
+            type: 'bar',
+            data: { labels: ubdLabels, datasets: [{ label: 'Clientes', data: ubdValues, backgroundColor: '#0ea5e9' }] },
+            options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+          });
+          })
+          .catch(err => {
+            console.error('Error cargando datos del dashboard', err);
+          });
+      }
+
+      // Listeners
+      document.getElementById('btn-range-day').addEventListener('click', () => loadData('day'));
+      document.getElementById('btn-range-week').addEventListener('click', () => loadData('week'));
+      document.getElementById('btn-range-month').addEventListener('click', () => loadData('month'));
+
+      // Inicial por mes
+      loadData('month');
+    });
+  </script>
+{% endblock %}

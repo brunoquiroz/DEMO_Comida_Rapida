@@ -1,0 +1,86 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block content %}
+  <div class="dashboard" style="margin-bottom: 2rem;">
+    <h1 style="margin-bottom:1rem;">Panel de control</h1>
+    <p>Resumen de los últimos 30 días.</p>
+
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; align-items: stretch;">
+      <div style="background:#fff; border:1px solid #eee; border-radius:8px; padding:12px;">
+        <h3 style="margin:0 0 8px 0;">Pedidos por día</h3>
+        <canvas id="ordersByDay"></canvas>
+      </div>
+      <div style="background:#fff; border:1px solid #eee; border-radius:8px; padding:12px;">
+        <h3 style="margin:0 0 8px 0;">Ingresos por día</h3>
+        <canvas id="revenueByDay"></canvas>
+      </div>
+      <div style="background:#fff; border:1px solid #eee; border-radius:8px; padding:12px;">
+        <h3 style="margin:0 0 8px 0;">Estados de pedidos</h3>
+        <canvas id="statusDistribution"></canvas>
+      </div>
+      <div style="background:#fff; border:1px solid #eee; border-radius:8px; padding:12px;">
+        <h3 style="margin:0 0 8px 0;">Top productos</h3>
+        <canvas id="topProducts"></canvas>
+      </div>
+    </div>
+  </div>
+
+  {# Lista de aplicaciones del admin debajo del dashboard #}
+  {% include "admin/app_list.html" with app_list=app_list %}
+{% endblock %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const endpoint = new URL('{% url "admin-dashboard-data" %}', window.location.origin).toString();
+      fetch(endpoint, { credentials: 'same-origin' })
+        .then(r => r.json())
+        .then(data => {
+          // Helpers
+          const fmtDate = (iso) => new Date(iso).toLocaleDateString(undefined, { month:'short', day:'numeric' });
+
+          // Orders by day
+          const obdl = data.ordersByDay.map(d => fmtDate(d.date));
+          const obdv = data.ordersByDay.map(d => d.count);
+          new Chart(document.getElementById('ordersByDay'), {
+            type: 'line',
+            data: { labels: obdl, datasets: [{ label: 'Pedidos', data: obdv, borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.2)', tension: 0.3, fill: true }] },
+            options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+          });
+
+          // Revenue by day
+          const rbdl = data.revenueByDay.map(d => fmtDate(d.date));
+          const rbdv = data.revenueByDay.map(d => d.total);
+          new Chart(document.getElementById('revenueByDay'), {
+            type: 'bar',
+            data: { labels: rbdl, datasets: [{ label: 'Ingresos', data: rbdv, backgroundColor: '#16a34a' }] },
+            options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+          });
+
+          // Status distribution
+          const sdLabels = Object.keys(data.statusDistribution);
+          const sdValues = Object.values(data.statusDistribution);
+          new Chart(document.getElementById('statusDistribution'), {
+            type: 'doughnut',
+            data: { labels: sdLabels, datasets: [{ data: sdValues, backgroundColor: ['#f59e0b','#3b82f6','#10b981','#ef4444','#a855f7','#6b7280'] }] },
+            options: { plugins: { legend: { position: 'bottom' } } }
+          });
+
+          // Top products
+          const tpLabels = data.topProducts.map(d => d.product);
+          const tpValues = data.topProducts.map(d => d.quantity);
+          new Chart(document.getElementById('topProducts'), {
+            type: 'bar',
+            data: { labels: tpLabels, datasets: [{ label: 'Unidades', data: tpValues, backgroundColor: '#0ea5e9' }] },
+            options: { plugins: { legend: { display: false } }, indexAxis: 'y', scales: { x: { beginAtZero: true } } }
+          });
+        })
+        .catch(err => {
+          console.error('Error cargando datos del dashboard', err);
+        });
+    });
+  </script>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "admin/change_form.html" %}
+{% load i18n %}
+
+{# Usamos el bloque 'content' para asegurar que se muestre en Django 5 #}
+{% block content %}
+  {{ block.super }}
+  <div class="module" style="margin-top:16px;">
+    <h2>{% trans "Reseñas de clientes (aprobadas)" %}</h2>
+    {% if approved_reviews %}
+      <style>
+        .review-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+        .review-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; background: #fff; }
+        .review-title { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+        .stars { color: #f59e0b; }
+        .muted { color:#6b7280; font-size:12px; }
+      </style>
+      <div class="review-list">
+        {% for r in approved_reviews %}
+          <div class="review-card">
+            <div class="review-title">
+              <strong>{{ r.user.username|default:"Anónimo" }}</strong>
+              <span class="stars">{% for i in "12345"|slice:":" %}{% if forloop.counter <= r.rating %}★{% else %}☆{% endif %}{% endfor %}</span>
+            </div>
+            <div style="white-space: pre-wrap;">{{ r.comment }}</div>
+            <div class="muted" style="margin-top:6px;">
+              {{ r.created_at|date:"d M Y H:i" }}{% if r.order %} · Pedido: {{ r.order.order_number }}{% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">{% trans "Aún no hay reseñas aprobadas para mostrar." %}</p>
+    {% endif %}
+  </div>
+{% endblock %}
